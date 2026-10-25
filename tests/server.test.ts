@@ -30,14 +30,23 @@ afterAll(() => {
   rmSync(dataDir, { recursive: true, force: true });
 });
 
-async function call(path: string, body?: unknown) {
+// Session tokens from registration are attached to that session's requests automatically.
+const tokens = new Map<string, string>();
+
+async function call(path: string, body?: unknown, opts: { key?: string } = {}) {
+  const pid = /^\/api\/sessions\/([^/]+)/.exec(path)?.[1];
+  const auth = opts.key ?? (pid ? tokens.get(decodeURIComponent(pid)) : undefined);
   const res = await fetch(base + path, {
     method: body === undefined ? 'GET' : 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...(auth ? { Authorization: `Bearer ${auth}` } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  return { status: res.status, data: (await res.json().catch(() => null)) as any, text: '' };
+  const data = (await res.json().catch(() => null)) as any;
+  if (path === '/api/sessions' && data?.token) tokens.set(data.participantId, data.token);
+  return { status: res.status, data, text: '' };
 }
+
+const research = (path: string) => call(path, undefined, { key: 'secret' });
 
 const answers = Object.fromEntries(PROFICIENCY_QUESTIONS.map((q) => [q.id, q.options.find((o) => o !== q.answer)!]));
 const background = { yearOfStudy: '2nd year', experience: '1 to 2 years', pythonConfidence: 3, aiToolUse: 'Weekly', consent: true };
@@ -50,7 +59,7 @@ describe('study API', () => {
       expect(r.status).toBe(200);
       seen.push(r.data.stepIndex);
     }
-    const overview = await call('/api/overview?key=secret');
+    const overview = await research('/api/overview');
     expect(overview.data.orders.map((o: any) => o.started)).toEqual([1, 1, 1, 1, 1, 1]);
   });
 
@@ -126,7 +135,7 @@ describe('study API', () => {
     expect(debrief.data.tasks.filter((t: any) => !t.aiWasCorrect)).toHaveLength(3);
 
     expect((await call('/api/export/attempts.json')).status).toBe(401);
-    const attempts = (await call('/api/export/attempts.json?key=secret')).data.filter((a: any) => a.participantId === pid);
+    const attempts = (await research('/api/export/attempts.json')).data.filter((a: any) => a.participantId === pid);
     expect(attempts).toHaveLength(8);
     const experimental = attempts.filter((a: any) => a.role === 'experimental');
     expect(new Set(experimental.map((a: any) => a.condition))).toEqual(new Set(['direct', 'always', 'adaptive']));
@@ -137,14 +146,14 @@ describe('study API', () => {
     expect(transfer.finalCorrect).toBe(false);
     expect(transfer.hiddenTotal).toBeGreaterThan(0);
 
-    const surveys = (await call('/api/export/surveys.json?key=secret')).data.filter((r: any) => r.participantId === pid);
+    const surveys = (await research('/api/export/surveys.json')).data.filter((r: any) => r.participantId === pid);
     const post = surveys.filter((r: any) => r.kind === 'post_condition');
     expect(post.map((r: any) => r.condition)).toEqual(['direct', 'always', 'adaptive']);
     expect(post[0].scores).toMatchObject({ rawTlx: 50, sus: 50, agencyMean: 4 });
     const final = surveys.find((r: any) => r.kind === 'final');
     expect(final.responses.prefer_overall_condition).toBe('adaptive');
 
-    const csv = await fetch(`${base}/api/export/attempts.csv?key=secret`).then((r) => r.text());
+    const csv = await fetch(`${base}/api/export/attempts.csv`, { headers: { Authorization: 'Bearer secret' } }).then((r) => r.text());
     expect(csv.split('\n')[0]).toContain('support_level');
   }, 120000);
 
@@ -168,7 +177,7 @@ describe('study API', () => {
     // a queued event from the task, delivered while the participant is on the questionnaire
     await call(`/api/sessions/${pid}/events`, [{ id: 'evt_late_1', type: 'tests_run', at: new Date().toISOString(), taskId, payload: {} }]);
 
-    const events = (await call('/api/export/events.json?key=secret')).data;
+    const events = (await research('/api/export/events.json')).data;
     expect(events.find((e: any) => e.id === 'evt_late_1')?.condition).toBe('direct');
   }, 60000);
 

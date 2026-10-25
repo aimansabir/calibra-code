@@ -21,6 +21,7 @@ export default defineConfig({
     url: `http://localhost:${PORT}/api/health`,
     reuseExistingServer: false,
     timeout: 120000,
-    env: { PORT: String(PORT), DATA_DIR: 'e2e/.data', STATIC_DIR: 'dist' },
+    // RESEARCH_KEY matches e2e/helpers.ts.
+    env: { PORT: String(PORT), DATA_DIR: 'e2e/.data', STATIC_DIR: 'dist', RESEARCH_KEY: 'e2e-research-key-0123456789' },
   },
 });

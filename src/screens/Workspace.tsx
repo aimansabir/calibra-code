@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
 import { python as pythonLang } from '@codemirror/lang-python';
-import { api, logEvent, type Advice, type PublicTask, type SessionView, type Step } from '../lib/api';
+import { Prec } from '@codemirror/state';
+import { keymap } from '@codemirror/view';
+import { api, isStale, logEvent, type Advice, type PublicTask, type SessionView, type Step } from '../lib/api';
 import { nowIso } from '../lib/id';
-import { python } from '../lib/python';
+import { python, useRunnerStatus } from '../lib/python';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { ErrorNote } from '../components/Form';
 import { PatchDiff } from '../components/PatchDiff';
@@ -32,10 +34,10 @@ const DECISIONS: { value: Decision; label: string; hint: string }[] = [
 
 const draftKey = (pid: string, taskId: string) => `calibra.draft.${pid}.${taskId}`;
 
-function loadDraft(pid: string, task: PublicTask): Draft {
+function loadDraft(pid: string, task: PublicTask): Draft & { restored?: boolean } {
   try {
     const raw = localStorage.getItem(draftKey(pid, task.id));
-    if (raw) return JSON.parse(raw);
+    if (raw) return { ...JSON.parse(raw), restored: true };
   } catch {
     // fall through to a fresh draft
   }
@@ -52,8 +54,30 @@ function loadDraft(pid: string, task: PublicTask): Draft {
   };
 }
 
-export function Workspace({ pid, step, task, onDone }: { pid: string; step: Extract<Step, { kind: 'task' }>; task: PublicTask; onDone: (s: SessionView, msg?: string) => void }) {
-  const [draft, setDraft] = useState<Draft>(() => loadDraft(pid, task));
+type DraftStatus = { kind: 'none' } | { kind: 'restored' } | { kind: 'saved'; at: Date } | { kind: 'failed' };
+
+const TABS = ['tests', 'console'] as const;
+
+export function Workspace({
+  pid,
+  stepIndex,
+  step,
+  task,
+  onDone,
+}: {
+  pid: string;
+  stepIndex: number;
+  step: Extract<Step, { kind: 'task' }>;
+  task: PublicTask;
+  onDone: (s: SessionView, msg?: string) => void;
+}) {
+  const [initial] = useState(() => loadDraft(pid, task));
+  const [draft, setDraft] = useState<Draft>(() => {
+    const { restored, ...d } = initial;
+    return d;
+  });
+  const [draftStatus, setDraftStatus] = useState<DraftStatus>(initial.restored ? { kind: 'restored' } : { kind: 'none' });
+  const runner = useRunnerStatus();
   const [advice, setAdvice] = useState<Advice | null>(task.advice);
   const [consoleOut, setConsoleOut] = useState<{ stdout: string; error: string | null } | null>(null);
   const [testRows, setTestRows] = useState<Row[]>(task.visibleTests);
@@ -65,18 +89,26 @@ export function Workspace({ pid, step, task, onDone }: { pid: string; step: Extr
   const [evidenceOpen, setEvidenceOpen] = useState(Boolean(task.advice?.evidenceOpen));
   const [confirm, setConfirm] = useState<null | { kind: 'decision'; decision: Decision } | { kind: 'reset' } | { kind: 'submit' }>(null);
   const lastEdit = useRef(0);
+  const firstSave = useRef(true);
+  const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
-  const log = (type: string, payload: Record<string, unknown> = {}) => logEvent(pid, type, task.id, payload);
+  // Stamped with this step, so events still count for this task if they're sent after the participant moves on.
+  const log = (type: string, payload: Record<string, unknown> = {}) => logEvent({ participantId: pid, stepIndex, taskId: task.id }, type, payload);
 
   useEffect(() => {
     log('task_view', { role: task.role, resumed: Boolean(task.advice) });
   }, []);
 
   useEffect(() => {
+    // The first run only writes back what was just loaded.
+    const first = firstSave.current;
+    firstSave.current = false;
     try {
       localStorage.setItem(draftKey(pid, task.id), JSON.stringify(draft));
+      if (!first) setDraftStatus({ kind: 'saved', at: new Date() });
     } catch {
-      // drafts are a convenience, the server has everything that matters
+      // drafts are a convenience, the server has everything that matters at submit
+      setDraftStatus({ kind: 'failed' });
     }
   }, [draft]);
 
@@ -211,9 +243,36 @@ export function Workspace({ pid, step, task, onDone }: { pid: string; step: Extr
         : `Saved. Your code passed ${r.visiblePassed} of ${r.visibleTotal} visible tests.`;
       onDone(r.session, msg);
     } catch (e) {
-      setError((e as Error).message);
+      // Already submitted (e.g. the response was lost): the app reloads the session.
+      if (!isStale(e)) setError((e as Error).message);
       setBusy(null);
     }
+  }
+
+  // Ctrl+Enter / Ctrl+Shift+Enter from inside the editor. Kept in a ref so the
+  // CodeMirror extension doesn't have to be rebuilt on every keystroke.
+  const actions = useRef({ runCode, runTests });
+  actions.current = { runCode, runTests };
+  const extensions = useMemo(
+    () => [
+      pythonLang(),
+      Prec.highest(
+        keymap.of([
+          { key: 'Mod-Enter', run: () => (void actions.current.runCode(), true) },
+          { key: 'Mod-Shift-Enter', run: () => (void actions.current.runTests(), true) },
+        ]),
+      ),
+    ],
+    [],
+  );
+
+  function onTabKey(e: React.KeyboardEvent) {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft' && e.key !== 'Home' && e.key !== 'End') return;
+    e.preventDefault();
+    const i = TABS.indexOf(outputTab);
+    const next = e.key === 'Home' ? 0 : e.key === 'End' ? TABS.length - 1 : (i + (e.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length;
+    setOutputTab(TABS[next]);
+    tabRefs.current[TABS[next]]?.focus();
   }
 
   const submitBlocker = !task.hasAi
@@ -265,35 +324,60 @@ export function Workspace({ pid, step, task, onDone }: { pid: string; step: Extr
       <section className="panel code-panel" aria-label="Code">
         <div className="toolbar">
           <span className="file">main.py</span>
-          <button onClick={runCode} disabled={running != null}>
+          <button onClick={runCode} disabled={running != null} aria-keyshortcuts="Control+Enter" title="Ctrl+Enter in the editor">
             {running === 'code' ? 'Running…' : '▶ Run code'}
           </button>
-          <button onClick={runTests} disabled={running != null}>
+          <button onClick={runTests} disabled={running != null} aria-keyshortcuts="Control+Shift+Enter" title="Ctrl+Shift+Enter in the editor">
             {running === 'tests' ? 'Testing…' : '✓ Run tests'}
           </button>
           <button className="quiet" onClick={() => setConfirm({ kind: 'reset' })}>
             Reset code
           </button>
+          <span className={`draft-status ${draftStatus.kind === 'failed' ? 'failed' : ''}`}>
+            {draftStatus.kind === 'restored' && 'Draft restored from this browser'}
+            {draftStatus.kind === 'saved' && `Draft saved in this browser at ${draftStatus.at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`}
+            {draftStatus.kind === 'failed' && "Draft can't be saved in this browser. Your work stays here until you close or reload the tab."}
+          </span>
         </div>
+        {runner === 'error' && (
+          <div className="runner-note" role="alert">
+            Python stopped working in this browser, so Run code and Run tests can't run. Your code is kept.{' '}
+            <button onClick={() => python().retry()}>Retry Python</button>
+          </div>
+        )}
         <div className="editor">
           <CodeMirror
             value={draft.code}
             onChange={onCodeChange}
-            extensions={[pythonLang()]}
+            extensions={extensions}
             basicSetup={{ lineNumbers: true, foldGutter: false, autocompletion: false, highlightActiveLine: true }}
             aria-label="Python code editor"
+            aria-describedby="editor-help"
           />
         </div>
+        <p id="editor-help" className="muted small editor-help">
+          Ctrl+Enter runs the code and Ctrl+Shift+Enter runs the tests. To leave the editor with the keyboard, press Esc and then Tab.
+        </p>
         <div className="output">
-          <div className="tabs" role="tablist">
-            <button role="tab" aria-selected={outputTab === 'tests'} onClick={() => setOutputTab('tests')}>
-              Visible tests
-            </button>
-            <button role="tab" aria-selected={outputTab === 'console'} onClick={() => setOutputTab('console')}>
-              Console
-            </button>
+          <div className="tabs" role="tablist" aria-label="Output" onKeyDown={onTabKey}>
+            {TABS.map((t) => (
+              <button
+                key={t}
+                ref={(el) => {
+                  tabRefs.current[t] = el;
+                }}
+                id={`tab-${t}`}
+                role="tab"
+                aria-selected={outputTab === t}
+                aria-controls="output-panel"
+                tabIndex={outputTab === t ? 0 : -1}
+                onClick={() => setOutputTab(t)}
+              >
+                {t === 'tests' ? 'Visible tests' : 'Console'}
+              </button>
+            ))}
           </div>
-          <div className="tab-body" role="tabpanel" aria-live="polite">
+          <div className="tab-body" id="output-panel" role="tabpanel" aria-labelledby={`tab-${outputTab}`} aria-live="polite">
             {outputTab === 'tests' ? (
               <>
                 <TestTable rows={testRows} />
@@ -490,10 +574,20 @@ export function Workspace({ pid, step, task, onDone }: { pid: string; step: Extr
 
         <div className="block submit-block">
           <ErrorNote error={error} />
-          <button className="primary big" disabled={Boolean(submitBlocker) || busy === 'submit'} onClick={() => setConfirm({ kind: 'submit' })}>
+          <button
+            className="primary big"
+            disabled={Boolean(submitBlocker) || busy === 'submit'}
+            aria-busy={busy === 'submit'}
+            aria-describedby={submitBlocker ? 'submit-blocker' : undefined}
+            onClick={() => setConfirm({ kind: 'submit' })}
+          >
             {busy === 'submit' ? 'Checking and saving…' : 'Submit final code'}
           </button>
-          {submitBlocker && <p className="muted small">{submitBlocker}</p>}
+          {submitBlocker && (
+            <p id="submit-blocker" className="muted small">
+              {submitBlocker}
+            </p>
+          )}
         </div>
       </section>
 

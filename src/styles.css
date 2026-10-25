@@ -349,7 +349,8 @@ input[type='range'].untouched::-moz-range-thumb {
   height: calc(100vh - 44px);
 }
 .app:has(.demo-strip) .workspace,
-.app:has(.flash) .workspace {
+.app:has(.flash) .workspace,
+.app:has(.offline-banner) .workspace {
   height: auto;
   min-height: calc(100vh - 90px);
 }
@@ -626,4 +627,133 @@ table.debrief {
 }
 .submit-block {
   padding-top: 0.8rem;
+}
+
+/* ---- accessibility and connection feedback ---- */
+
+.skip-link {
+  position: absolute;
+  left: 0.5rem;
+  top: -3rem;
+  z-index: 10;
+  background: var(--panel);
+  color: var(--ink);
+  padding: 0.4rem 0.8rem;
+  border-radius: 6px;
+}
+.skip-link:focus {
+  top: 0.5rem;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+main:focus,
+main h1:focus {
+  outline: none;
+}
+main h1:focus-visible {
+  outline: 3px solid #f0a500;
+}
+.topbar-button {
+  padding: 0.1rem 0.6rem;
+  font-size: 0.8rem;
+}
+.offline-banner {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--warn-soft);
+  color: var(--warn);
+  border-bottom: 1px solid #e8c77a;
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+}
+.offline-banner button {
+  flex-shrink: 0;
+}
+.draft-status {
+  margin-left: auto;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.draft-status.failed {
+  color: var(--fail);
+}
+.runner-note {
+  background: var(--fail-soft);
+  color: var(--fail);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.9rem;
+}
+.editor-help {
+  margin: 0;
+  padding: 0.2rem 0.75rem;
+}
+
+/* ---- researcher dashboard ---- */
+
+.page.researcher {
+  max-width: 1400px;
+}
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+.stat {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+}
+.stat-value {
+  font-size: 1.6rem;
+  font-weight: 700;
+}
+.stat.warn .stat-value {
+  color: var(--warn);
+}
+.table-scroll {
+  overflow-x: auto;
+}
+.participants th[scope='row'] {
+  text-align: left;
+  white-space: nowrap;
+}
+.participants tr.has-warnings > * {
+  background: var(--warn-soft);
+}
+.warn-list {
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+  font-size: 0.85rem;
+  color: var(--warn);
+}
+.badge.demo {
+  margin-left: 0.4rem;
+  color: var(--demo);
+  background: #f2ebfa;
+}
+.issue-form {
+  max-width: 640px;
+}
+.exports {
+  list-style: none;
+  padding: 0;
+}
+.exports li {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin: 0.3rem 0;
+}
+.exports li span {
+  min-width: 10rem;
 }

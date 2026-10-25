@@ -2,22 +2,28 @@
 //   npm run analyze                  reads ./data
 //   npm run analyze -- path/to/data  reads another export folder
 //   add --demo to include demo sessions (useful for checking the pipeline)
+//   add --out=folder to write somewhere other than analysis/out
+// Attempts a researcher marked as technically affected (and excluded) are
+// dropped, and every exclusion is listed in the summary and in exclusions.csv.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Store, toCsv } from '../server/store';
 import type { Condition, SurveyResponse, TaskAttempt } from '../src/study/types';
+import { applyExclusions } from './exclusions';
 import { friedman, holm, mean, median, quantile, sd, wilcoxon } from './stats';
 
 const args = process.argv.slice(2);
 const includeDemo = args.includes('--demo');
 const dataDir = args.find((a) => !a.startsWith('--')) ?? process.env.DATA_DIR ?? 'data';
-const outDir = join('analysis', 'out');
+const outDir = args.find((a) => a.startsWith('--out='))?.slice('--out='.length) || join('analysis', 'out');
 
 const store = new Store(dataDir);
 const keep = (r: { isDemo?: unknown }) => includeDemo || !r.isDemo;
 const participants = store.read('participants').filter(keep) as Record<string, any>[];
 const done = new Set(participants.filter((p) => p.completedAt).map((p) => p.id));
-const attempts = (store.read('attempts') as unknown as TaskAttempt[]).filter((a) => keep(a) && done.has(a.participantId));
+const incomplete = participants.filter((p) => !p.completedAt).map((p) => String(p.id));
+const allAttempts = (store.read('attempts') as unknown as TaskAttempt[]).filter((a) => keep(a) && done.has(a.participantId));
+const { kept: attempts, exclusions, flaggedKept } = applyExclusions(allAttempts, store.read('technical_issues').filter(keep), done);
 const surveys = (store.read('surveys') as unknown as SurveyResponse[]).filter((s) => keep(s) && done.has(s.participantId));
 
 const CONDITIONS: Condition[] = ['direct', 'always', 'adaptive'];
@@ -84,6 +90,19 @@ md.push('# CALIBRA CODE results', '');
 md.push(`Data: \`${dataDir}\`${includeDemo ? ' (demo sessions included)' : ''}. Completed participants: **${done.size}**. Experimental attempts: ${attempts.filter((a) => a.role === 'experimental').length}.`, '');
 md.push('Values are per-participant means within each condition, summarised as mean (SD) and median [IQR].', 'Friedman tests treat the three conditions as repeated measures; pairwise Wilcoxon signed-rank tests are Holm-corrected within each measure.', '');
 
+md.push('## Exclusions', '');
+md.push(`Participants who did not finish are left out: ${incomplete.length}${incomplete.length ? ` (${incomplete.join(', ')})` : ''}.`, '');
+const dropped = exclusions.filter((e) => e.status === 'excluded');
+md.push(`Attempts excluded for technical issues: **${dropped.length}**. A condition whose attempts are all excluded has no value for that participant, so they drop out of the complete-case tests for it. Post-task survey answers for excluded attempts are kept.`, '');
+if (exclusions.length) {
+  md.push('| Participant | Task | Role | Condition | Reason | Recorded | Status |', '|---|---|---|---|---|---|---|');
+  for (const e of exclusions) md.push(`| ${e.participantId} | ${e.taskId} | ${e.role} | ${e.condition ? NAMES[e.condition as Condition] : '–'} | ${e.reason.replace(/\|/g, '\\|').replace(/\n/g, ' ')} | ${e.recordedAt} | ${e.status} |`);
+  md.push('');
+}
+if (flaggedKept.length) {
+  md.push(`Technical issues recorded but kept in the analysis: ${flaggedKept.length} (${flaggedKept.map((i) => `${i.participantId}/${i.taskId}`).join(', ')}).`, '');
+}
+
 const tests: Record<string, string | number>[] = [];
 for (const m of MEASURES) {
   const t = table(m.key);
@@ -147,5 +166,6 @@ mkdirSync(outDir, { recursive: true });
 writeFileSync(join(outDir, 'participant_condition.csv'), toCsv(rows));
 writeFileSync(join(outDir, 'tests.csv'), toCsv(tests));
 writeFileSync(join(outDir, 'comments.csv'), toCsv(comments.map((c) => ({ ...c, theme: '' }))));
+writeFileSync(join(outDir, 'exclusions.csv'), toCsv(exclusions.map((e) => ({ ...e }))));
 writeFileSync(join(outDir, 'summary.md'), md.join('\n'));
-console.log(`analysed ${done.size} completed participants -> ${outDir}/summary.md`);
+console.log(`analysed ${done.size} completed participants (${dropped.length} attempts excluded for technical issues) -> ${outDir}/summary.md`);

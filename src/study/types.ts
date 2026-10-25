@@ -97,6 +97,8 @@ export interface Participant {
   orderIndex?: number;
   conditionOrder?: Condition[];
   completedAt?: string;
+  studyVersion?: string;
+  protocolVersion?: string;
 }
 
 export interface PlannedTask {
@@ -178,6 +180,8 @@ export interface TaskAttempt {
   testRunsAfterAdvice: number;
   evidenceViews: number;
   edits: number;
+  studyVersion?: string;
+  protocolVersion?: string;
 }
 
 export interface SurveyResponse {
@@ -191,6 +195,8 @@ export interface SurveyResponse {
   responses: Record<string, number | string>;
   scores: Record<string, number>;
   submittedAt: string;
+  studyVersion?: string;
+  protocolVersion?: string;
 }
 
 export interface StudyEvent {
@@ -199,7 +205,37 @@ export interface StudyEvent {
   isDemo: boolean;
   type: string;
   at: string;
+  // The step the event was created on, not the one it was received on.
+  stepIndex: number;
+  stepKind: string;
   taskId: string | null;
+  role: TaskRole | null;
   condition: Condition | null;
+  block: number | null;
+  indexInBlock: number;
+  // 'client' = stamped by the browser; 'task' / 'current' = inferred for events without a stamp
+  attribution: 'client' | 'task' | 'current';
+  receivedAtStepIndex: number;
   payload: Record<string, unknown>;
+}
+
+// A researcher's note that something technical went wrong during a task
+// (crash, lost connection, lab interruption). exclude=true drops the attempt from the analysis.
+export interface TechnicalIssue {
+  id: string;
+  participantId: string;
+  isDemo: boolean;
+  taskId: string;
+  role: TaskRole;
+  condition: Condition | null;
+  block: number | null;
+  indexInBlock: number;
+  stepIndex: number;
+  attemptId: string | null;
+  reason: string;
+  exclude: boolean;
+  removed: boolean;
+  recordedAt: string;
+  studyVersion: string;
+  protocolVersion: string;
 }

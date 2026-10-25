@@ -1,7 +1,8 @@
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { buildPlan, ORDERS } from '../src/study/plan';
 import { compareDiagnosis, supportFor } from '../src/study/adaptive';
 import { classifyReliance } from '../src/study/reliance';
-import { PROFICIENCY_QUESTIONS, rawTlx, scoreProficiency, susScore, AGENCY_ITEMS } from '../src/study/questionnaires';
+import { PROFICIENCY_QUESTIONS, rawTlx, scoreProficiency, susScore, AGENCY_ITEMS, POST_TASK_ITEMS, SUS_ITEMS, TLX_ITEMS } from '../src/study/questionnaires';
 import { getTask, TASKS, visibleTests } from '../src/study/tasks';
 import type {
   AdaptiveSignals,
@@ -18,15 +19,20 @@ import type {
 import type { Grader } from './grader';
 import type { Store } from './store';
 import { newId } from '../src/lib/id';
+import { versions } from './version';
 
 export class StudyError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    // Lets the browser tell "this step is already done" apart from other conflicts.
+    readonly code?: 'stale_step',
   ) {
     super(message);
   }
 }
+
+const hashToken = (token: string) => createHash('sha256').update(token).digest();
 
 // What the browser is told about each step. Conditions are left out on purpose.
 export type Step =
@@ -38,7 +44,7 @@ export type Step =
   | { kind: 'final' }
   | { kind: 'debrief' };
 
-type InternalStep = Step & { condition: Condition | null; block: number | null; indexInBlock: number };
+export type InternalStep = Step & { condition: Condition | null; block: number | null; indexInBlock: number };
 
 interface CurrentTask {
   taskId: string;
@@ -61,7 +67,7 @@ interface Session {
   current: CurrentTask | null;
 }
 
-function buildSteps(plan: StudyPlan): InternalStep[] {
+export function buildSteps(plan: StudyPlan): InternalStep[] {
   const none = { condition: null, block: null, indexInBlock: 0 };
   const steps: InternalStep[] = [
     { kind: 'proficiency', ...none },
@@ -147,9 +153,35 @@ function checkFor(activity: VerificationActivity, task: TaskDef): CheckDef | nul
   return null;
 }
 
+// The browser already asks for every required answer. This stops a stale tab
+// or a hand-made request from storing a half-filled questionnaire.
+function surveyProblem(kind: 'post_task' | 'post_condition' | 'final', st: InternalStep, r: Record<string, unknown>) {
+  const items: { id: string; min: number; max: number }[] = [];
+  if (kind === 'post_task') {
+    const transfer = 'role' in st && st.role === 'transfer';
+    for (const i of POST_TASK_ITEMS) if (!(transfer && i.ai)) items.push({ id: i.id, min: 1, max: 7 });
+  }
+  if (kind === 'post_condition') {
+    for (const i of TLX_ITEMS) items.push({ id: i.id, min: 0, max: 100 });
+    for (const i of SUS_ITEMS) items.push({ id: i.id, min: 1, max: 5 });
+    for (const i of AGENCY_ITEMS) items.push({ id: i.id, min: 1, max: 7 });
+  }
+  const choices = kind === 'final' ? ['prefer_overall', 'prefer_trust', 'prefer_least_effort'] : [];
+  const missing = [...items.map((i) => i.id), ...choices].filter((k) => r[k] == null || r[k] === '').length;
+  if (missing) return `Please answer every question (${missing} left).`;
+  const outside = items.some((i) => {
+    const v = Number(r[i.id]);
+    return !Number.isFinite(v) || v < i.min || v > i.max;
+  });
+  if (outside || choices.some((k) => !/^Part [1-3]$/.test(String(r[k])))) return 'Some answers are outside the scale. Please check them and try again.';
+  return null;
+}
+
 export class Study {
   private sessions = new Map<string, Session>();
   private patchResults = new Map<string, TestResult[]>();
+  private tokens = new Map<string, Buffer>();
+  private locks = new Map<string, Promise<unknown>>();
 
   constructor(
     private store: Store,
@@ -189,16 +221,52 @@ export class Study {
       consent: true,
       orderIndex: plan.orderIndex,
       conditionOrder: plan.conditionOrder,
+      ...versions(),
     };
     const session: Session = { id, participant, steps: buildSteps(plan), stepIndex: 0, current: null };
     this.sessions.set(id, session);
     this.store.append('participants', [{ ...participant, pairByCondition: plan.pairByCondition }]);
     this.persist(session);
-    return this.view(session);
+    // Only a hash is stored, in a collection that is never exported.
+    const token = randomBytes(32).toString('base64url');
+    const tokenHash = hashToken(token);
+    this.store.append('credentials', [{ id, tokenHash: tokenHash.toString('hex'), createdAt: participant.createdAt }]);
+    this.tokens.set(id, tokenHash);
+    return { ...this.view(session), token };
+  }
+
+  // Every participant endpoint needs the token handed out at registration,
+  // so knowing (or guessing) a participant ID isn't enough to act as them.
+  authorize(id: string, token: string | undefined) {
+    this.get(id);
+    let expected = this.tokens.get(id);
+    if (!expected) {
+      const row = this.store.read('credentials').find((r) => r.id === id);
+      if (row) this.tokens.set(id, (expected = Buffer.from(String(row.tokenHash), 'hex')));
+    }
+    // A damaged credentials row has the wrong length, and timingSafeEqual would throw on it.
+    if (!token || expected?.length !== 32 || !timingSafeEqual(hashToken(token), expected)) {
+      throw new StudyError(401, 'This browser is not signed in to that study session. Please ask the researcher for help.');
+    }
+  }
+
+  // Requests for one session run one at a time. Without this, a double click or
+  // a retried request can pass the step check twice while the grader is busy.
+  exclusive<T>(id: string, fn: () => T | Promise<T>): Promise<T> {
+    const run = (this.locks.get(id) ?? Promise.resolve()).catch(() => {}).then(fn);
+    this.locks.set(id, run);
+    run.finally(() => this.locks.get(id) === run && this.locks.delete(id)).catch(() => {});
+    return run;
+  }
+
+  // For the researcher dashboard and technical-issue records.
+  progress(id: string) {
+    const s = this.get(id);
+    return { participant: s.participant, steps: s.steps, stepIndex: s.stepIndex };
   }
 
   private persist(s: Session) {
-    this.store.append('sessions', [{ id: s.id, participantId: s.id, isDemo: s.participant.isDemo, stepIndex: s.stepIndex, current: s.current }]);
+    this.store.append('sessions', [{ id: s.id, participantId: s.id, isDemo: s.participant.isDemo, stepIndex: s.stepIndex, current: s.current, ...versions() }]);
   }
 
   // After a server restart, rebuild the session from what was saved.
@@ -226,7 +294,7 @@ export class Study {
   private expect(s: Session, kind: Step['kind'], taskId?: string) {
     const st = this.step(s);
     if (st.kind !== kind || (taskId && 'taskId' in st && st.taskId !== taskId)) {
-      throw new StudyError(409, 'This step is no longer active. Reload the page to continue where you left off.');
+      throw new StudyError(409, 'This step is no longer active. Reload the page to continue where you left off.', 'stale_step');
     }
     return st;
   }
@@ -509,6 +577,7 @@ export class Study {
       testRunsAfterAdvice: num(c.testRunsAfterAdvice),
       evidenceViews: num(c.evidenceViews),
       edits: num(c.edits),
+      ...versions(),
     };
     this.store.append('attempts', [attempt]);
     this.advance(s);
@@ -521,6 +590,9 @@ export class Study {
   submitSurvey(id: string, kind: 'post_task' | 'post_condition' | 'final', responses: Record<string, number | string>) {
     const s = this.get(id);
     const st = this.expect(s, kind);
+    responses = responses && typeof responses === 'object' ? responses : {};
+    const problem = surveyProblem(kind, st, responses);
+    if (problem) throw new StudyError(400, problem);
     const scores: Record<string, number> = {};
     if (kind === 'post_condition') {
       scores.rawTlx = rawTlx(responses);
@@ -549,6 +621,7 @@ export class Study {
         responses,
         scores,
         submittedAt: new Date().toISOString(),
+        ...versions(),
       },
     ]);
     this.advance(s);
@@ -557,23 +630,51 @@ export class Study {
 
   // ---- events ----
 
-  logEvents(id: string, events: { id?: string; type?: string; at?: string; taskId?: string | null; payload?: Record<string, unknown> }[]) {
+  logEvents(id: string, events: { id?: string; type?: string; at?: string; taskId?: string | null; stepIndex?: number; payload?: Record<string, unknown> }[]) {
     const s = this.get(id);
-    const rows = events.slice(0, 500).map((e) => ({
-      id: String(e.id ?? newId('evt_')),
-      participantId: id,
-      isDemo: s.participant.isDemo,
-      type: String(e.type ?? 'unknown'),
-      at: String(e.at ?? new Date().toISOString()),
-      taskId: e.taskId ?? null,
-      // Conditions are attached here because the browser never knows them.
-      // Events are queued, so look the task up in the plan rather than trusting the current step.
-      condition: s.steps.find((step) => step.kind === 'task' && step.taskId === e.taskId)?.condition ?? null,
-      stepIndex: s.stepIndex,
-      payload: e.payload ?? {},
-    }));
+    const rows = events.slice(0, 500).map((e) => {
+      const { stepIndex, attribution } = this.attribute(s, e);
+      const st = s.steps[stepIndex];
+      return {
+        id: String(e.id ?? newId('evt_')),
+        participantId: id,
+        isDemo: s.participant.isDemo,
+        type: String(e.type ?? 'unknown'),
+        at: String(e.at ?? new Date().toISOString()),
+        // These describe the step the event happened on, which is earlier than the
+        // current one when the event waited in the browser's queue.
+        // Conditions are attached here because the browser never knows them.
+        stepIndex,
+        stepKind: st.kind,
+        taskId: 'taskId' in st ? st.taskId : null,
+        role: 'role' in st ? st.role : null,
+        condition: st.condition,
+        block: st.block,
+        indexInBlock: st.indexInBlock,
+        attribution,
+        receivedAtStepIndex: s.stepIndex,
+        payload: e.payload ?? {},
+        ...versions(),
+      };
+    });
     this.store.append('events', rows);
     return rows.length;
+  }
+
+  // The browser stamps each event with the step it was created on. The stamp is
+  // used if that step has been reached and matches the event's task. Events
+  // queued by an older version of the app have no stamp, so fall back to the
+  // task's step, and only then to the current step.
+  private attribute(s: Session, e: { taskId?: string | null; stepIndex?: number }) {
+    const taskId = e.taskId ?? null;
+    const n = e.stepIndex;
+    if (typeof n === 'number' && Number.isInteger(n) && n >= 0 && n <= s.stepIndex) {
+      const st = s.steps[n];
+      if (taskId == null || ('taskId' in st && st.taskId === taskId)) return { stepIndex: n, attribution: 'client' as const };
+    }
+    const byTask = taskId == null ? -1 : s.steps.findIndex((st) => st.kind === 'task' && st.taskId === taskId);
+    if (byTask >= 0) return { stepIndex: byTask, attribution: 'task' as const };
+    return { stepIndex: s.stepIndex, attribution: 'current' as const };
   }
 
   // ---- debrief ----

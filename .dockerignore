@@ -1,0 +1,14 @@
+node_modules
+dist
+data
+backups
+public/pyodide
+test-results
+playwright-report
+e2e/.data
+analysis/out
+.git
+.github
+.env
+*.log
+*.tsbuildinfo

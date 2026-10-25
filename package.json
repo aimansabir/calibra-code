@@ -1,17 +1,21 @@
 {
   "name": "calibra-code",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
   "scripts": {
     "setup:pyodide": "node scripts/copy-pyodide.mjs",
     "dev": "npm run setup:pyodide && concurrently -k -n api,web \"tsx watch server/index.ts\" \"vite\"",
     "build": "npm run setup:pyodide && tsc -b && vite build && tsx scripts/check-bundle.ts",
-    "start": "tsx server/index.ts",
+    "start": "node --env-file-if-exists=.env --import tsx server/index.ts",
     "test": "vitest run",
     "test:e2e": "npm run build && playwright test",
     "typecheck": "tsc -b",
-    "analyze": "tsx analysis/analyze.ts"
+    "analyze": "tsx analysis/analyze.ts",
+    "backup": "node scripts/backup.mjs"
   },
   "dependencies": {
     "@codemirror/lang-python": "^6.2.1",

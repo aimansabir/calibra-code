@@ -20,6 +20,8 @@ export class Grader {
   private queue: Job[] = [];
   private busy = false;
   private nextId = 1;
+  // For the health check. 'idle' means the last child was stopped and a new one starts with the next job.
+  state: 'starting' | 'ready' | 'idle' | 'unavailable' = 'idle';
 
   private spawn() {
     const child = fork(childScript, [pathToFileURL(join(pyodideDir, 'pyodide.mjs')).href, harness], {
@@ -29,10 +31,12 @@ export class Grader {
     let stderr = '';
     child.stderr?.on('data', (d) => (stderr += d));
     this.child = child;
+    this.state = 'starting';
     this.ready = new Promise((ok, fail) => {
       const onMsg = (m: any) => {
         if (m?.ready) {
           child.off('message', onMsg);
+          if (this.child === child) this.state = 'ready';
           ok();
         }
       };
@@ -41,6 +45,7 @@ export class Grader {
     });
     child.once('exit', () => {
       if (this.child === child) {
+        this.state = this.state === 'starting' ? 'unavailable' : 'idle';
         this.child = null;
         this.ready = null;
       }
@@ -98,6 +103,7 @@ export class Grader {
         // Forget it before killing, so the next job doesn't go to a dying process.
         this.child = null;
         this.ready = null;
+        this.state = 'idle';
         child.kill();
         done(failAll('timed out'));
       }, TIMEOUT_MS);

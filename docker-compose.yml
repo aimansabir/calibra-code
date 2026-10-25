@@ -1,0 +1,21 @@
+# docker compose up -d --build
+# Reads RESEARCH_KEY (and optionally PORT) from .env next to this file. See docs/operations.md.
+services:
+  calibra:
+    build: .
+    image: calibra-code
+    restart: unless-stopped
+    ports:
+      - '${PORT:-3000}:3000'
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATA_DIR: /data
+      RESEARCH_KEY: ${RESEARCH_KEY:?Set RESEARCH_KEY in .env (see .env.example)}
+    volumes:
+      # Named volume: kept when the container is rebuilt or removed. Only `docker compose down -v` deletes it.
+      - calibra-data:/data
+    stop_grace_period: 15s
+
+volumes:
+  calibra-data:
