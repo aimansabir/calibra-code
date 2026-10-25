@@ -1,10 +1,13 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { accessSync, appendFileSync, constants, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 // Append-only JSON lines, one file per collection. Nothing is ever rewritten,
 // so a crash mid-session can lose at most the line being written.
-export const COLLECTIONS = ['participants', 'sessions', 'attempts', 'surveys', 'events'] as const;
-export type Collection = (typeof COLLECTIONS)[number];
+// COLLECTIONS are the ones researchers can export. credentials holds session
+// token hashes and never leaves the server.
+export const COLLECTIONS = ['participants', 'sessions', 'attempts', 'surveys', 'events', 'technical_issues'] as const;
+export type ExportCollection = (typeof COLLECTIONS)[number];
+export type Collection = ExportCollection | 'credentials';
 
 export class Store {
   constructor(readonly dir: string) {
@@ -19,6 +22,15 @@ export class Store {
     if (!rows.length) return;
     const stamped = rows.map((r) => JSON.stringify({ ...r, _savedAt: new Date().toISOString() }));
     appendFileSync(this.file(c), stamped.join('\n') + '\n');
+  }
+
+  writable() {
+    try {
+      accessSync(this.dir, constants.W_OK);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   readRaw(c: Collection): Record<string, unknown>[] {

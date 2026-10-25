@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import { isStale } from '../lib/api';
 
 // A row of labelled radio buttons. Used for Likert items and multiple choice.
 export function ChoiceGroup(props: {
@@ -82,7 +83,8 @@ export function useSubmit<T>(fn: () => Promise<T>) {
     try {
       return await fn();
     } catch (e) {
-      setError((e as Error).message);
+      // A step that was already saved: the app reloads the session instead.
+      if (!isStale(e)) setError((e as Error).message);
     } finally {
       setBusy(false);
     }
