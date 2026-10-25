@@ -1,0 +1,38 @@
+{
+  "id": "sum-to-n",
+  "role": "experimental",
+  "pair": "A",
+  "title": "Sum of the first n numbers",
+  "bugType": "Off by one loop",
+  "difficulty": 1,
+  "functionName": "sum_to_n",
+  "objective": "sum_to_n(n) should add up every whole number from 1 up to and including n.",
+  "expected": "Return the total as an integer. For n of 0 or less, return 0.",
+  "examples": ["sum_to_n(3) -> 6", "sum_to_n(1) -> 1", "sum_to_n(0) -> 0"],
+  "constraints": ["Use a loop, not the n * (n + 1) / 2 formula."],
+  "tests": [
+    { "name": "small n", "call": "sum_to_n(3)", "expected": "6" },
+    { "name": "n is one", "call": "sum_to_n(1)", "expected": "1" },
+    { "name": "n is zero", "call": "sum_to_n(0)", "expected": "0" },
+    { "name": "n is ten", "call": "sum_to_n(10)", "expected": "55", "hidden": true },
+    { "name": "negative n", "call": "sum_to_n(-4)", "expected": "0", "hidden": true },
+    { "name": "large n", "call": "sum_to_n(100)", "expected": "5050", "hidden": true }
+  ],
+  "advice": {
+    "correctness": "correct",
+    "diagnosis": "range(1, n) on line 4 stops before n, so the last number is never added.",
+    "rationale": "range excludes its end value. Using range(1, n + 1) includes n itself, and still gives an empty loop when n is 0 or negative.",
+    "targetLines": [4],
+    "note": "Correct suggestion."
+  },
+  "patchVisible": "pass",
+  "evidence": {
+    "staticWarnings": [],
+    "prediction": {
+      "question": "After applying the suggested patch, what does sum_to_n(4) return?",
+      "call": "sum_to_n(4)",
+      "options": ["6", "10", "4", "15"],
+      "answer": "10"
+    }
+  }
+}

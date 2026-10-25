@@ -1,0 +1,41 @@
+{
+  "id": "course-averages",
+  "role": "experimental",
+  "pair": "C",
+  "title": "Course averages",
+  "bugType": "Dictionary key handling",
+  "difficulty": 3,
+  "functionName": "course_averages",
+  "objective": "course_averages(records) takes (student, course, score) tuples and returns the average score for every course.",
+  "expected": "Return a dict like {\"math\": 85.0}. Each average is rounded to 1 decimal place. An empty list gives an empty dict.",
+  "examples": [
+    "course_averages([(\"ana\", \"math\", 80), (\"ben\", \"math\", 90)]) -> {\"math\": 85.0}",
+    "course_averages([]) -> {}"
+  ],
+  "constraints": ["A student can appear in more than one course."],
+  "tests": [
+    { "name": "one course", "call": "course_averages([('ana', 'math', 80), ('ben', 'math', 90)])", "expected": "{'math': 85.0}" },
+    { "name": "no records", "call": "course_averages([])", "expected": "{}" },
+    { "name": "two courses", "call": "course_averages([('ana', 'art', 70), ('ana', 'math', 95), ('cy', 'art', 75)])", "expected": "{'art': 72.5, 'math': 95.0}" },
+    { "name": "single record", "call": "course_averages([('dan', 'cs', 88)])", "expected": "{'cs': 88.0}", "hidden": true },
+    { "name": "rounding", "call": "course_averages([('a', 'cs', 70), ('b', 'cs', 80), ('c', 'cs', 81)])", "expected": "{'cs': 77.0}", "hidden": true },
+    { "name": "many courses", "call": "course_averages([('a', 'x', 1), ('b', 'y', 2), ('c', 'x', 4), ('d', 'z', 9)])", "expected": "{'x': 2.5, 'y': 2.0, 'z': 9.0}", "hidden": true }
+  ],
+  "advice": {
+    "correctness": "correct",
+    "diagnosis": "Line 7 uses totals[course] += score, which raises a KeyError the first time a course is seen because the key does not exist yet.",
+    "rationale": "totals.get(course, 0) + score starts each new course at 0, the same way the counts line below already does. The second loop then works unchanged.",
+    "targetLines": [7],
+    "note": "Correct suggestion."
+  },
+  "patchVisible": "pass",
+  "evidence": {
+    "staticWarnings": [],
+    "prediction": {
+      "question": "After applying the suggested patch, what does course_averages([(\"a\", \"cs\", 70), (\"b\", \"cs\", 75)]) return?",
+      "call": "course_averages([('a', 'cs', 70), ('b', 'cs', 75)])",
+      "options": ["{'cs': 72.5}", "{'cs': 145}", "KeyError", "{'cs': 72}"],
+      "answer": "{'cs': 72.5}"
+    }
+  }
+}

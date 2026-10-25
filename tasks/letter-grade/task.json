@@ -1,0 +1,50 @@
+{
+  "id": "letter-grade",
+  "role": "experimental",
+  "pair": "A",
+  "title": "Letter grades",
+  "bugType": "Incorrect condition",
+  "difficulty": 1,
+  "functionName": "letter_grade",
+  "objective": "letter_grade(score) should turn a numeric score into a letter grade.",
+  "expected": "90 and above is \"A\", 80-89 is \"B\", 70-79 is \"C\", 60-69 is \"D\" and anything below 60 is \"F\".",
+  "examples": ["letter_grade(95) -> \"A\"", "letter_grade(65) -> \"D\"", "letter_grade(40) -> \"F\""],
+  "constraints": ["Boundary scores belong to the higher grade, so 80 is a \"B\"."],
+  "tests": [
+    { "name": "top score", "call": "letter_grade(95)", "expected": "'A'" },
+    { "name": "D range", "call": "letter_grade(65)", "expected": "'D'" },
+    { "name": "failing score", "call": "letter_grade(40)", "expected": "'F'" },
+    { "name": "A boundary", "call": "letter_grade(90)", "expected": "'A'", "hidden": true },
+    { "name": "C range", "call": "letter_grade(79)", "expected": "'C'", "hidden": true },
+    { "name": "D boundary", "call": "letter_grade(60)", "expected": "'D'", "hidden": true },
+    { "name": "B range", "call": "letter_grade(85)", "expected": "'B'", "hidden": true },
+    { "name": "zero", "call": "letter_grade(0)", "expected": "'F'", "hidden": true }
+  ],
+  "advice": {
+    "correctness": "incorrect",
+    "diagnosis": "The comparisons use >= when they should be strict, so boundary scores are pushed into the wrong grade.",
+    "rationale": "Switching every >= to > makes each band exclusive at its lower edge, which removes the overlap between grades.",
+    "targetLines": [3, 5, 7, 9],
+    "note": "Incorrect. The real problem is the order of the checks: score >= 60 is tested first, so every passing score becomes \"D\". The patch also breaks the boundaries (60 becomes \"F\")."
+  },
+  "patchVisible": "partial",
+  "evidence": {
+    "staticWarnings": [],
+    "prediction": {
+      "question": "After applying the suggested patch, what does letter_grade(95) return?",
+      "call": "letter_grade(95)",
+      "options": ["'A'", "'B'", "'D'", "'F'"],
+      "answer": "'D'"
+    },
+    "failingTestCheck": {
+      "question": "With the patch applied, the test letter_grade(95) still fails. What does this failing test show?",
+      "options": [
+        "A score of 95 is caught by an earlier condition, so the order of the checks is the problem",
+        "The boundary at 95 needs a strict > comparison",
+        "The test expects the wrong value",
+        "Python cannot compare integers with >= reliably"
+      ],
+      "answer": "A score of 95 is caught by an earlier condition, so the order of the checks is the problem"
+    }
+  }
+}

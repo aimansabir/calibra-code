@@ -1,0 +1,38 @@
+{
+  "id": "average-positive",
+  "role": "experimental",
+  "pair": "B",
+  "title": "Average of positive numbers",
+  "bugType": "Return placement",
+  "difficulty": 2,
+  "functionName": "average_positive",
+  "objective": "average_positive(numbers) should return the average of only the values that are greater than zero.",
+  "expected": "Zero and negative values are ignored. If no value is above zero (or the list is empty), return 0.0.",
+  "examples": ["average_positive([2, 4, 6]) -> 4.0", "average_positive([-1, 3, 5]) -> 4.0", "average_positive([]) -> 0.0"],
+  "constraints": ["The result is always a float."],
+  "tests": [
+    { "name": "all positive", "call": "average_positive([2, 4, 6])", "expected": "4.0" },
+    { "name": "starts negative", "call": "average_positive([-1, 3, 5])", "expected": "4.0" },
+    { "name": "empty list", "call": "average_positive([])", "expected": "0.0" },
+    { "name": "all negative", "call": "average_positive([-5, -2])", "expected": "0.0", "hidden": true },
+    { "name": "single value", "call": "average_positive([7])", "expected": "7.0", "hidden": true },
+    { "name": "mixed with zero", "call": "average_positive([0, 10, -10, 20])", "expected": "15.0", "hidden": true }
+  ],
+  "advice": {
+    "correctness": "correct",
+    "diagnosis": "The two return statements on lines 9 to 11 are indented inside the for loop, so the function returns after looking at only the first number.",
+    "rationale": "Moving the count check and the return out of the loop lets the loop visit every number before the average is calculated. It also means an empty list reaches return 0.0 instead of returning None.",
+    "targetLines": [9, 10, 11],
+    "note": "Correct suggestion."
+  },
+  "patchVisible": "pass",
+  "evidence": {
+    "staticWarnings": [],
+    "prediction": {
+      "question": "After applying the suggested patch, what does average_positive([1, -1, 2]) return?",
+      "call": "average_positive([1, -1, 2])",
+      "options": ["1.0", "1.5", "0.0", "0.6666666666666666"],
+      "answer": "1.5"
+    }
+  }
+}

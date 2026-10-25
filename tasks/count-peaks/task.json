@@ -1,0 +1,57 @@
+{
+  "id": "count-peaks",
+  "role": "experimental",
+  "pair": "C",
+  "title": "Count the peaks",
+  "bugType": "List index handling",
+  "difficulty": 3,
+  "functionName": "count_peaks",
+  "objective": "count_peaks(heights) should count how many positions are strictly higher than both of their neighbours.",
+  "expected": "Only inner positions can be peaks. The first and last positions never count. Short or empty lists return 0.",
+  "examples": ["count_peaks([1, 3, 2]) -> 1", "count_peaks([1, 3, 1, 3, 1]) -> 2", "count_peaks([1, 2, 3]) -> 0"],
+  "constraints": ["Do not count plateaus: a value must be strictly greater than both neighbours."],
+  "tests": [
+    { "name": "one peak", "call": "count_peaks([1, 3, 2])", "expected": "1" },
+    { "name": "mountain", "call": "count_peaks([1, 2, 3, 2, 1])", "expected": "1" },
+    { "name": "rising only", "call": "count_peaks([1, 2, 3])", "expected": "0" },
+    { "name": "two peaks", "call": "count_peaks([1, 3, 1, 3, 1])", "expected": "2" },
+    { "name": "high first value", "call": "count_peaks([5, 1, 2])", "expected": "0", "hidden": true },
+    { "name": "high first and inner peak", "call": "count_peaks([3, 1, 2, 1])", "expected": "1", "hidden": true },
+    { "name": "empty list", "call": "count_peaks([])", "expected": "0", "hidden": true },
+    { "name": "single value", "call": "count_peaks([4])", "expected": "0", "hidden": true },
+    { "name": "flat", "call": "count_peaks([2, 2, 2])", "expected": "0", "hidden": true }
+  ],
+  "advice": {
+    "correctness": "incorrect",
+    "diagnosis": "The loop on line 5 runs to the last index, so heights[i + 1] goes past the end of the list and raises an IndexError.",
+    "rationale": "Stopping the loop one position earlier with range(len(heights) - 1) keeps i + 1 inside the list.",
+    "targetLines": [5],
+    "note": "Incorrect. It removes the crash, but the loop still starts at 0, where heights[i - 1] wraps around to the last element. A high first value can then be counted as a peak, for example [5, 1, 2] returns 1."
+  },
+  "patchVisible": "pass",
+  "evidence": {
+    "staticWarnings": [
+      {
+        "line": 6,
+        "message": "Negative index: when i is 0, heights[i - 1] reads heights[-1], the last element of the list."
+      }
+    ],
+    "prediction": {
+      "question": "After applying the suggested patch, what does count_peaks([5, 1, 2]) return?",
+      "call": "count_peaks([5, 1, 2])",
+      "options": ["0", "1", "2", "IndexError"],
+      "answer": "1"
+    },
+    "suspiciousLineCheck": {
+      "line": 6,
+      "question": "The code checker flagged line 6 of the patch. What happens there when i is 0?",
+      "options": [
+        "heights[i - 1] reads the last element, so the first position can be counted as a peak",
+        "heights[i - 1] raises an IndexError",
+        "Nothing, the loop never uses i = 0",
+        "heights[i + 1] goes past the end of the list"
+      ],
+      "answer": "heights[i - 1] reads the last element, so the first position can be counted as a peak"
+    }
+  }
+}

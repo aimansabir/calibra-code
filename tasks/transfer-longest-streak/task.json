@@ -1,0 +1,27 @@
+{
+  "id": "transfer-longest-streak",
+  "role": "transfer",
+  "title": "Longest practice streak",
+  "bugType": "Missing edge case",
+  "difficulty": 2,
+  "functionName": "longest_streak",
+  "objective": "longest_streak(days) should return the length of the longest run of consecutive True values.",
+  "expected": "A run can be anywhere in the list, including at the very end. An empty list returns 0.",
+  "examples": [
+    "longest_streak([True, True, False, True]) -> 2",
+    "longest_streak([False, True, True, True]) -> 3",
+    "longest_streak([]) -> 0"
+  ],
+  "constraints": ["Values are always True or False."],
+  "tests": [
+    { "name": "streak at start", "call": "longest_streak([True, True, False, True])", "expected": "2" },
+    { "name": "streak at end", "call": "longest_streak([False, True, True, True])", "expected": "3" },
+    { "name": "empty list", "call": "longest_streak([])", "expected": "0" },
+    { "name": "all true", "call": "longest_streak([True, True, True])", "expected": "3", "hidden": true },
+    { "name": "streak in middle", "call": "longest_streak([True, False, True, True, False])", "expected": "2", "hidden": true },
+    { "name": "all false", "call": "longest_streak([False, False])", "expected": "0", "hidden": true },
+    { "name": "longer streak at end", "call": "longest_streak([True, False, True, True, True])", "expected": "3", "hidden": true }
+  ],
+  "advice": null,
+  "evidence": { "staticWarnings": [] }
+}

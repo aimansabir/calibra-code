@@ -1,0 +1,55 @@
+{
+  "id": "second-largest",
+  "role": "experimental",
+  "pair": "B",
+  "title": "Second largest value",
+  "bugType": "Missing edge case",
+  "difficulty": 2,
+  "functionName": "second_largest",
+  "objective": "second_largest(numbers) should return the second largest distinct value in the list.",
+  "expected": "Repeated values only count once. If there is no second distinct value, return None.",
+  "examples": ["second_largest([3, 1, 4, 2]) -> 3", "second_largest([10, 20]) -> 10", "second_largest([7]) -> None"],
+  "constraints": ["Do not modify the list that is passed in."],
+  "tests": [
+    { "name": "unsorted list", "call": "second_largest([3, 1, 4, 2])", "expected": "3" },
+    { "name": "two values", "call": "second_largest([10, 20])", "expected": "10" },
+    { "name": "single value", "call": "second_largest([7])", "expected": "None" },
+    { "name": "repeated maximum", "call": "second_largest([5, 5, 3])", "expected": "3", "hidden": true },
+    { "name": "all the same", "call": "second_largest([4, 4])", "expected": "None", "hidden": true },
+    { "name": "empty list", "call": "second_largest([])", "expected": "None", "hidden": true },
+    { "name": "repeated in middle", "call": "second_largest([1, 9, 9, 2])", "expected": "2", "hidden": true }
+  ],
+  "advice": {
+    "correctness": "incorrect",
+    "diagnosis": "ordered[-2] on line 4 crashes when the list has fewer than two items, because there is no second element to read.",
+    "rationale": "Adding a length check before sorting returns None for short lists and keeps the existing logic for everything else.",
+    "targetLines": [3, 4],
+    "note": "Partially correct. The length check fixes the crash, but duplicates are never removed, so [5, 5, 3] returns 5 and [4, 4] returns 4."
+  },
+  "patchVisible": "pass",
+  "evidence": {
+    "staticWarnings": [
+      {
+        "line": 6,
+        "message": "Possible logic issue: ordered[-2] depends on duplicate values. The docstring asks for a distinct value, but duplicates are not removed before indexing."
+      }
+    ],
+    "prediction": {
+      "question": "After applying the suggested patch, what does second_largest([5, 5, 3]) return?",
+      "call": "second_largest([5, 5, 3])",
+      "options": ["3", "5", "None", "IndexError"],
+      "answer": "5"
+    },
+    "suspiciousLineCheck": {
+      "line": 6,
+      "question": "The code checker flagged line 6 of the patch. What could go wrong there?",
+      "options": [
+        "If the largest value appears twice, ordered[-2] is that same largest value",
+        "Negative indexes cannot be used on a sorted list",
+        "sorted() changes the list that was passed in",
+        "Nothing, the length check on line 3 already covers every case"
+      ],
+      "answer": "If the largest value appears twice, ordered[-2] is that same largest value"
+    }
+  }
+}

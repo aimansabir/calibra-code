@@ -1,0 +1,10 @@
+node_modules
+dist
+data
+public/pyodide
+test-results
+playwright-report
+e2e/.data
+*.log
+analysis/out
+*.tsbuildinfo

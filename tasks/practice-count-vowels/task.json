@@ -1,0 +1,36 @@
+{
+  "id": "practice-count-vowels",
+  "role": "practice",
+  "title": "Count the vowels",
+  "bugType": "Incorrect condition",
+  "difficulty": 1,
+  "functionName": "count_vowels",
+  "objective": "count_vowels(text) should return how many vowels (a, e, i, o, u) appear in the text.",
+  "expected": "Upper case and lower case vowels both count. Other characters are ignored.",
+  "examples": ["count_vowels(\"banana\") -> 3", "count_vowels(\"APPLE\") -> 2", "count_vowels(\"\") -> 0"],
+  "constraints": ["Only a, e, i, o and u are vowels (y is not)."],
+  "tests": [
+    { "name": "lower case word", "call": "count_vowels(\"banana\")", "expected": "3" },
+    { "name": "upper case word", "call": "count_vowels(\"APPLE\")", "expected": "2" },
+    { "name": "empty string", "call": "count_vowels(\"\")", "expected": "0" },
+    { "name": "no vowels", "call": "count_vowels(\"Rhythm\")", "expected": "0", "hidden": true },
+    { "name": "mixed case", "call": "count_vowels(\"Education\")", "expected": "5", "hidden": true }
+  ],
+  "advice": {
+    "correctness": "correct",
+    "diagnosis": "The check on line 4 only matches lower case vowels, so capital letters like 'A' and 'E' are never counted.",
+    "rationale": "Converting each character to lower case before the membership test makes the check case-insensitive without changing anything else.",
+    "targetLines": [4],
+    "note": "Correct suggestion."
+  },
+  "patchVisible": "pass",
+  "evidence": {
+    "staticWarnings": [],
+    "prediction": {
+      "question": "After applying the suggested patch, what does count_vowels(\"AeIoU x\") return?",
+      "call": "count_vowels(\"AeIoU x\")",
+      "options": ["0", "2", "5", "6"],
+      "answer": "5"
+    }
+  }
+}
